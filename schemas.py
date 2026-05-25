@@ -1,57 +1,23 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
-import uuid
+from pydantic import BaseModel
+from typing import Tuple, List
 
-# Pydantic schemas for data validation and serialization
-
-class UserBase(BaseModel):
-    name: str = Field(..., example="Alice Smith")
-
-class UserCreate(UserBase):
-    pass
-
-class UserResponse(UserBase):
-    id: uuid.UUID
-    created_at: datetime
-
-    class Config:
-        from_attributes = True # Allow ORM models to be converted to Pydantic
-
-class DriverBase(BaseModel):
-    name: str = Field(..., example="Bob Johnson")
-    latitude: float = Field(..., example=34.0522)
-    longitude: float = Field(..., example=-118.2437)
-    wallet_balance: float = Field(0.0, ge=0, example=50.75)
-    is_active: bool = Field(True, example=True)
-
-class DriverCreate(DriverBase):
-    pass
-
-class DriverResponse(DriverBase):
-    id: uuid.UUID
-
-    class Config:
-        from_attributes = True
+class Coordinates(BaseModel):
+    """Represents geographical coordinates."""
+    latitude: float
+    longitude: float
 
 class BookingRequest(BaseModel):
-    user_id: uuid.UUID = Field(..., example=str(uuid.uuid4()))
-    pickup_latitude: float = Field(..., example=34.0522)
-    pickup_longitude: float = Field(..., example=-118.2437)
-    drop_latitude: float = Field(..., example=34.0000)
-    drop_longitude: float = Field(..., example=-118.1000)
-    pickup_address: str = Field(..., example="123 Main St, Los Angeles")
-    drop_address: str = Field(..., example="456 Oak Ave, Los Angeles")
+    """Schema for the incoming booking request."""
+    user_id: str
+    pickup_point: Coordinates
+    dropoff_point: Coordinates
 
 class BookingResponse(BaseModel):
-    booking_id: uuid.UUID
-    user_id: uuid.UUID
-    driver_id: Optional[uuid.UUID] = None
+    """Schema for the outgoing booking response."""
     total_fare: float
+    driver_name: str
     status: str
-    pickup_address: str
-    drop_address: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+    # You could add more fields here like:
+    # estimated_eta: int # in minutes
+    # driver_location: Coordinates
+    # route_points: List[Coordinates]

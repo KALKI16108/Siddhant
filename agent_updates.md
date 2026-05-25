@@ -1,423 +1,600 @@
-Here's the refactored application, transitioning from in-memory arrays to a robust relational database layer using SQLAlchemy and PostgreSQL, configured for Supabase.
+File Name: index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dispatch Dashboard</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzJjQFX+vGeFVieYN8GpPyWTNA="
+     crossorigin=""/>
+    <style>
+        /* Basic Reset & Typography */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-I've structured the application into several modules:
-*   `database.py`: Handles the database connection and session management.
-*   `models.py`: Defines the SQLAlchemy ORM models for our tables. This replaces the conceptual 'schemas.py' for database schema definition.
-*   `schemas.py`: Defines Pydantic schemas for request and response data validation.
-*   `pricing.py`: Contains logic for calculating the fare.
-*   `matching.py`: Contains logic for driver matching, including haversine distance calculation.
-*   `app.py`: The main FastAPI application, integrating all components.
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f7f6;
+            height: 100vh;
+            display: flex;
+            overflow: hidden; /* Prevent body scroll, layout handles content */
+        }
 
----
+        /* Dashboard Layout (Flexbox) */
+        .dashboard-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
 
-File Name: database.py
-```python
-import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
+        .sidebar {
+            flex: 0 0 35%; /* 35% width, non-growable, non-shrinkable */
+            background-color: #ffffff;
+            padding: 2rem;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto; /* Scroll for sidebar content if it overflows */
+        }
 
-# Load environment variables from .env file for local development
-load_dotenv()
+        .map-viewport {
+            flex: 1; /* Takes remaining 65% width */
+            position: relative;
+            background-color: #e0e0e0; /* Placeholder */
+        }
 
-# Safely read DATABASE_URL from environment secrets
-DATABASE_URL = os.getenv("DATABASE_URL")
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px; /* Slightly rounded corners for map */
+        }
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set.")
+        /* Sidebar Content Styling */
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+            font-weight: 600;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 1rem;
+        }
 
-# Initialize SQLAlchemy Engine
-# The `connect_args` might be needed for some specific database setups,
-# but usually not required for standard Supabase connections with psycopg2.
-# For Supabase, the URL typically includes SSL parameters if needed, or it's handled automatically.
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True # Ensures connections are valid
-)
+        .form-section {
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #f0f0f0;
+        }
 
-# Create a SessionLocal class
-# Each instance of the SessionLocal class will be a database session.
-# The `autocommit=False` means that we have to explicitly commit our changes,
-# which is good practice for transactions.
-# The `autoflush=False` means that ORM operations won't flush to the database automatically
-# until a commit or an explicit flush.
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        .form-group {
+            margin-bottom: 1rem;
+        }
 
-# Declare a Base for our declarative models
-# This will be imported by our models.py to define table structures.
-Base = declarative_base()
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #555;
+            font-size: 0.9rem;
+        }
 
-def get_db():
-    """
-    Dependency to provide a database session for FastAPI endpoints.
-    It ensures the session is closed after the request is processed.
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+        .form-group input[type="text"],
+        .form-group input[type="hidden"] {
+            width: 100%;
+            padding: 0.8rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s ease-in-out;
+            background-color: #fcfcfc;
+        }
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
 
-# Example: Function to create all tables (for initial setup/migrations)
-def create_db_and_tables():
-    """
-    Creates all defined tables in the database.
-    This should typically be part of a migration strategy (e.g., Alembic),
-    but for a simple setup, it can be run manually or on application startup.
-    """
-    # Import models to ensure Base knows about them before creating tables
-    # pylint: disable=unused-import,import-outside-toplevel
-    from . import models
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created (if they didn't exist).")
+        #dispatchButton {
+            width: 100%;
+            padding: 1rem 1.5rem;
+            background-color: #007bff; /* Bright blue */
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease;
+            margin-top: 1.5rem;
+            box-shadow: 0 4px 10px rgba(0, 123, 255, 0.3);
+        }
 
-if __name__ == '__main__':
-    # This block allows you to run `python database.py` to create tables
-    # Make sure your DATABASE_URL is set in a .env file or environment.
-    create_db_and_tables()
-    print(f"Connected to database: {DATABASE_URL.split('@')[-1]}")
+        #dispatchButton:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+
+        #dispatchButton:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.3);
+        }
+
+        /* Tracking Console Card */
+        .tracking-card {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .tracking-card h3 {
+            color: #34495e;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 0.8rem;
+        }
+
+        .tracking-card p {
+            margin-bottom: 0.7rem;
+            font-size: 1rem;
+            color: #495057;
+        }
+
+        .tracking-card p strong {
+            color: #212529;
+            font-weight: 600;
+        }
+
+        #statusBadge {
+            margin-top: 1rem;
+            padding: 0.6rem 1rem;
+            background-color: #d1ecf1; /* Light blue background */
+            color: #0c5460; /* Darker blue text */
+            border: 1px solid #bee5eb;
+            border-radius: 20px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-block;
+            opacity: 0; /* Hidden initially */
+            transform: scale(0.8); /* Smaller initially */
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        /* Animation for status badge */
+        #statusBadge.animate {
+            animation: pulse-and-fade 2s infinite ease-out;
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        @keyframes pulse-and-fade {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+        }
+
+        #statusBadge.confirmed {
+            background-color: #d4edda; /* Greenish for confirmed */
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+
+        /* Leaflet custom marker icons (optional but good for visual distinction) */
+        .leaflet-marker-icon.pickup-marker {
+            /* Example: Custom styling for green marker */
+            filter: hue-rotate(100deg) brightness(0.9);
+        }
+        .leaflet-marker-icon.dropoff-marker {
+            /* Example: Custom styling for red marker */
+            filter: hue-rotate(0deg) brightness(0.9);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <h1>Dispatch Dashboard</h1>
+
+            <section class="form-section">
+                <div class="form-group">
+                    <label for="userId">User ID:</label>
+                    <input type="text" id="userId" placeholder="Enter User ID (e.g., U123)" value="U123">
+                </div>
+
+                <div class="form-group">
+                    <label for="pickupAddress">Pickup Address:</label>
+                    <input type="text" id="pickupAddress" placeholder="Double-click map for pickup point" readonly>
+                    <input type="hidden" id="pickupLat">
+                    <input type="hidden" id="pickupLng">
+                </div>
+
+                <div class="form-group">
+                    <label for="dropoffAddress">Drop-off Address:</label>
+                    <input type="text" id="dropoffAddress" placeholder="Double-click map for drop-off point" readonly>
+                    <input type="hidden" id="dropoffLat">
+                    <input type="hidden" id="dropoffLng">
+                </div>
+
+                <button id="dispatchButton">Calculate & Dispatch</button>
+            </section>
+
+            <section class="tracking-card">
+                <h3>Real-time Tracking Console</h3>
+                <p>Total Fare: <strong id="fareDisplay">N/A</strong></p>
+                <p>Assigned Driver: <strong id="driverDisplay">N/A</strong></p>
+                <div id="statusBadge"></div>
+            </section>
+        </aside>
+
+        <main class="map-viewport">
+            <div id="map"></div>
+        </main>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzJjQFX+vGeFVieYN8GpPyWTNA="
+     crossorigin=""></script>
+    <script>
+        // Initialize the map
+        const map = L.map('map').setView([19.0760, 72.8777], 13); // Centered over Mumbai
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // Custom Marker Icons
+        const greenIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        const redIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        // Global variables for markers and coordinates
+        let pickupMarker = null;
+        let dropoffMarker = null;
+        let mapClickCounter = 0; // To track first or second double-click
+
+        // DOM Elements
+        const userIdInput = document.getElementById('userId');
+        const pickupAddressInput = document.getElementById('pickupAddress');
+        const pickupLatInput = document.getElementById('pickupLat');
+        const pickupLngInput = document.getElementById('pickupLng');
+        const dropoffAddressInput = document.getElementById('dropoffAddress');
+        const dropoffLatInput = document.getElementById('dropoffLat');
+        const dropoffLngInput = document.getElementById('dropoffLng');
+        const dispatchButton = document.getElementById('dispatchButton');
+        const fareDisplay = document.getElementById('fareDisplay');
+        const driverDisplay = document.getElementById('driverDisplay');
+        const statusBadge = document.getElementById('statusBadge');
+
+        // Function to update address inputs with coordinates (mock reverse geocoding)
+        function updateAddressInputs(latlng, type) {
+            const addressText = `Lat: ${latlng.lat.toFixed(4)}, Lng: ${latlng.lng.toFixed(4)}`;
+            if (type === 'pickup') {
+                pickupAddressInput.value = addressText;
+                pickupLatInput.value = latlng.lat;
+                pickupLngInput.value = latlng.lng;
+            } else {
+                dropoffAddressInput.value = addressText;
+                dropoffLatInput.value = latlng.lat;
+                dropoffLngInput.value = latlng.lng;
+            }
+        }
+
+        // Map Double-Click Listener
+        map.on('dblclick', function(e) {
+            mapClickCounter++;
+
+            if (mapClickCounter % 2 !== 0) { // First double-click: Pickup
+                if (pickupMarker) {
+                    map.removeLayer(pickupMarker);
+                }
+                pickupMarker = L.marker(e.latlng, { icon: greenIcon }).addTo(map)
+                    .bindPopup('<b>Pickup Point</b>').openPopup();
+                updateAddressInputs(e.latlng, 'pickup');
+            } else { // Second double-click: Drop-off
+                if (dropoffMarker) {
+                    map.removeLayer(dropoffMarker);
+                }
+                dropoffMarker = L.marker(e.latlng, { icon: redIcon }).addTo(map)
+                    .bindPopup('<b>Drop-off Point</b>').openPopup();
+                updateAddressInputs(e.latlng, 'dropoff');
+            }
+
+            // After placing two markers, potentially reset counter or prepare for next pair
+            // Or just let it cycle, placing a new pickup after a dropoff if user keeps clicking.
+            // For clarity, we can reset if both are set and user clicks again, for a new journey.
+            if (pickupMarker && dropoffMarker && mapClickCounter % 2 === 0) {
+                 // Optionally, reset mapClickCounter to allow new pickup to be first dbl-click after this.
+                 // mapClickCounter = 0; // This would clear existing markers on next dbl-click.
+                 // For now, it cycles. 1st click = pickup, 2nd = dropoff, 3rd = new pickup, 4th = new dropoff.
+            }
+        });
+
+        // "Calculate & Dispatch" Button Listener
+        dispatchButton.addEventListener('click', async () => {
+            const userId = userIdInput.value.trim();
+            const pickupLat = parseFloat(pickupLatInput.value);
+            const pickupLng = parseFloat(pickupLngInput.value);
+            const dropoffLat = parseFloat(dropoffLatInput.value);
+            const dropoffLng = parseFloat(dropoffLngInput.value);
+
+            if (!userId) {
+                alert('Please enter a User ID.');
+                return;
+            }
+            if (isNaN(pickupLat) || isNaN(pickupLng)) {
+                alert('Please double-click on the map to set a Pickup Point.');
+                return;
+            }
+            if (isNaN(dropoffLat) || isNaN(dropoffLng)) {
+                alert('Please double-click on the map to set a Drop-off Point.');
+                return;
+            }
+
+            dispatchButton.disabled = true;
+            dispatchButton.textContent = 'Dispatching...';
+            statusBadge.classList.remove('animate', 'confirmed');
+            statusBadge.style.opacity = '0'; // Hide initially
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/book', { // Assuming backend runs on port 5000
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        pickup_point: { latitude: pickupLat, longitude: pickupLng },
+                        dropoff_point: { latitude: dropoffLat, longitude: dropoffLng }
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                fareDisplay.textContent = `₹ ${data.total_fare.toFixed(2)}`;
+                driverDisplay.textContent = data.driver_name;
+                
+                statusBadge.textContent = `🚚 ${data.status}`;
+                statusBadge.classList.add('animate', 'confirmed'); // Add animation and confirmed style
+                statusBadge.style.opacity = '1';
+
+            } catch (error) {
+                console.error('Error during dispatch:', error);
+                fareDisplay.textContent = 'Error';
+                driverDisplay.textContent = 'Error';
+                statusBadge.textContent = `❌ Dispatch Failed: ${error.message}`;
+                statusBadge.classList.remove('animate', 'confirmed');
+                statusBadge.style.opacity = '1';
+                statusBadge.style.backgroundColor = '#f8d7da';
+                statusBadge.style.borderColor = '#f5c6cb';
+                statusBadge.style.color = '#721c24';
+
+            } finally {
+                dispatchButton.disabled = false;
+                dispatchButton.textContent = 'Calculate & Dispatch';
+            }
+        });
+    </script>
+</body>
+</html>
 ```
-
-File Name: models.py
-```python
-import uuid
-from datetime import datetime
-from sqlalchemy import Column, String, Float, Boolean, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import relationship
-from .database import Base # Import Base from our database connection
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    name = Column(String, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Relationship to Bookings
-    bookings = relationship("Booking", back_populates="user")
-
-class Driver(Base):
-    __tablename__ = "drivers"
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    name = Column(String, nullable=False, index=True)
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
-    wallet_balance = Column(Float, default=0.0)
-    is_active = Column(Boolean, default=True)
-
-    # Relationship to Bookings
-    bookings = relationship("Booking", back_populates="driver")
-
-class Booking(Base):
-    __tablename__ = "bookings"
-    booking_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    driver_id = Column(PG_UUID(as_uuid=True), ForeignKey("drivers.id"), nullable=True) # Nullable until matched
-    total_fare = Column(Float, nullable=False)
-    status = Column(String, default="PENDING", index=True) # e.g., 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'
-    pickup_address = Column(String, nullable=False)
-    drop_address = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Relationships to User and Driver
-    user = relationship("User", back_populates="bookings")
-    driver = relationship("Driver", back_populates="bookings")
-```
-
 File Name: schemas.py
 ```python
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
-import uuid
+from pydantic import BaseModel
+from typing import Tuple, List
 
-# Pydantic schemas for data validation and serialization
-
-class UserBase(BaseModel):
-    name: str = Field(..., example="Alice Smith")
-
-class UserCreate(UserBase):
-    pass
-
-class UserResponse(UserBase):
-    id: uuid.UUID
-    created_at: datetime
-
-    class Config:
-        from_attributes = True # Allow ORM models to be converted to Pydantic
-
-class DriverBase(BaseModel):
-    name: str = Field(..., example="Bob Johnson")
-    latitude: float = Field(..., example=34.0522)
-    longitude: float = Field(..., example=-118.2437)
-    wallet_balance: float = Field(0.0, ge=0, example=50.75)
-    is_active: bool = Field(True, example=True)
-
-class DriverCreate(DriverBase):
-    pass
-
-class DriverResponse(DriverBase):
-    id: uuid.UUID
-
-    class Config:
-        from_attributes = True
+class Coordinates(BaseModel):
+    """Represents geographical coordinates."""
+    latitude: float
+    longitude: float
 
 class BookingRequest(BaseModel):
-    user_id: uuid.UUID = Field(..., example=str(uuid.uuid4()))
-    pickup_latitude: float = Field(..., example=34.0522)
-    pickup_longitude: float = Field(..., example=-118.2437)
-    drop_latitude: float = Field(..., example=34.0000)
-    drop_longitude: float = Field(..., example=-118.1000)
-    pickup_address: str = Field(..., example="123 Main St, Los Angeles")
-    drop_address: str = Field(..., example="456 Oak Ave, Los Angeles")
+    """Schema for the incoming booking request."""
+    user_id: str
+    pickup_point: Coordinates
+    dropoff_point: Coordinates
 
 class BookingResponse(BaseModel):
-    booking_id: uuid.UUID
-    user_id: uuid.UUID
-    driver_id: Optional[uuid.UUID] = None
+    """Schema for the outgoing booking response."""
     total_fare: float
+    driver_name: str
     status: str
-    pickup_address: str
-    drop_address: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+    # You could add more fields here like:
+    # estimated_eta: int # in minutes
+    # driver_location: Coordinates
+    # route_points: List[Coordinates]
 ```
-
 File Name: pricing.py
 ```python
-# pricing.py - Module for calculating booking fare
+import math
+from typing import Tuple
 
-FARE_PER_KM = 1.5
-BASE_FARE = 5.0
-
-def calculate_fare(distance_km: float) -> float:
+def calculate_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
     """
-    Calculates the total fare based on the distance.
-    A simple linear model: Base Fare + (Distance * Fare per KM).
-    """
-    if distance_km < 0:
-        raise ValueError("Distance cannot be negative.")
-    
-    total_fare = BASE_FARE + (distance_km * FARE_PER_KM)
-    return round(total_fare, 2) # Round to two decimal places
-```
-
-File Name: matching.py
-```python
-# matching.py - Module for driver matching and proximity calculations
-from typing import List, Optional
-from haversine import haversine, Unit
-from sqlalchemy.orm import Session
-from .models import Driver
-
-def find_closest_driver(
-    db: Session,
-    pickup_latitude: float,
-    pickup_longitude: float,
-    min_wallet_balance: float = 20.0
-) -> Optional[Driver]:
-    """
-    Finds the closest active driver with a sufficient wallet balance from the database.
+    Calculates the great-circle distance between two points on the Earth
+    (specified in decimal degrees) using the Haversine formula.
 
     Args:
-        db: SQLAlchemy session.
-        pickup_latitude: Latitude of the pickup location.
-        pickup_longitude: Longitude of the pickup location.
-        min_wallet_balance: Minimum wallet balance required for a driver to be eligible.
+        p1 (Tuple[float, float]): (latitude, longitude) of the first point.
+        p2 (Tuple[float, float]): (latitude, longitude) of the second point.
 
     Returns:
-        The closest Driver object, or None if no suitable driver is found.
+        float: Distance in kilometers.
     """
-    # Query all active drivers with sufficient wallet balance
-    eligible_drivers: List[Driver] = db.query(Driver).filter(
-        Driver.is_active == True,
-        Driver.wallet_balance >= min_wallet_balance
-    ).all()
+    R = 6371  # Earth radius in kilometers
 
-    if not eligible_drivers:
-        return None
+    lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
+    lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
 
-    pickup_coords = (pickup_latitude, pickup_longitude)
-    closest_driver: Optional[Driver] = None
-    min_distance_km = float('inf')
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
 
-    for driver in eligible_drivers:
-        driver_coords = (driver.latitude, driver.longitude)
-        distance = haversine(pickup_coords, driver_coords, unit=Unit.KILOMETERS)
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-        if distance < min_distance_km:
-            min_distance_km = distance
-            closest_driver = driver
-            
-    return closest_driver
+    distance = R * c
+    return distance
 
-def calculate_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def calculate_fare(pickup_coords: Tuple[float, float], dropoff_coords: Tuple[float, float]) -> float:
     """
-    Calculates the Haversine distance between two sets of coordinates in kilometers.
+    Calculates a mock fare based on distance between pickup and dropoff points.
+
+    Args:
+        pickup_coords (Tuple[float, float]): (latitude, longitude) of pickup.
+        dropoff_coords (Tuple[float, float]): (latitude, longitude) of dropoff.
+
+    Returns:
+        float: Rounded total fare.
     """
-    coords1 = (lat1, lon1)
-    coords2 = (lat2, lon2)
-    return haversine(coords1, coords2, unit=Unit.KILOMETERS)
+    distance_km = calculate_distance(pickup_coords, dropoff_coords)
+
+    # Simple pricing model
+    base_fare = 50.0  # INR
+    per_km_rate = 15.0 # INR/km
+    minimum_fare_distance_km = 1.0 # Minimum distance for full per_km_rate
+
+    effective_distance_km = max(distance_km, minimum_fare_distance_km)
+    fare = base_fare + (effective_distance_km * per_km_rate)
+
+    # Add a surge factor for demonstration (e.g., random 1.0 to 1.5x)
+    # surge_factor = 1.0 + (random.random() * 0.5)
+    # fare *= surge_factor
+
+    return round(fare, 2)
 ```
+File Name: matching.py
+```python
+import random
+from typing import Tuple, List
 
+# A mock list of available drivers
+AVAILABLE_DRIVERS: List[str] = ["Rajesh Kumar", "Priya Sharma", "Amit Singh", "Sunita Devi", "Vikram Patel", "Seema Rao"]
+
+def assign_driver(pickup_coords: Tuple[float, float]) -> str:
+    """
+    Mocks the logic for assigning a driver.
+
+    In a real-world system, this would involve:
+    1. Querying a database or real-time service for nearby available drivers.
+    2. Considering factors like driver's current location, estimated time of arrival (ETA),
+       driver rating, vehicle type, and current demand.
+    3. Potentially using optimization algorithms to find the best match.
+
+    For this demonstration, it simply picks a random driver from a predefined list.
+
+    Args:
+        pickup_coords (Tuple[float, float]): The coordinates of the pickup point.
+                                             (Not used in this mock but would be in real logic).
+
+    Returns:
+        str: The name of the assigned driver.
+    """
+    return random.choice(AVAILABLE_DRIVERS)
+```
 File Name: app.py
 ```python
-from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import List
-import uuid
+from flask import Flask, request, jsonify
+from flask_cors import CORS # Used for local development to allow frontend requests
+import time # To simulate network delay
 
-# Local imports
-from . import models, schemas, pricing, matching
-from .database import engine, get_db, create_db_and_tables # Import create_db_and_tables
+# Import backend logic modules
+from schemas import BookingRequest, BookingResponse, Coordinates
+from pricing import calculate_fare
+from matching import assign_driver
 
-app = FastAPI(
-    title="RideShare API (Database Edition)",
-    description="A simple ride-sharing application with FastAPI, SQLAlchemy, and PostgreSQL.",
-    version="1.0.0"
-)
+app = Flask(__name__)
+# Enable CORS for all routes, allowing requests from any origin during development.
+# In a production environment, you would restrict this to specific origins.
+CORS(app) 
 
-# --- Startup Event ---
-@app.on_event("startup")
-def on_startup():
+@app.route('/book', methods=['POST'])
+def book_ride():
     """
-    Event handler for application startup.
-    Ensures all database tables are created before the application starts serving requests.
-    In a production environment, you would typically use a migration tool like Alembic.
+    Handles the ride booking request from the frontend.
+    Validates input, calculates fare, assigns a driver, and returns booking details.
     """
-    create_db_and_tables()
-    print("FastAPI application started and database tables ensured.")
+    try:
+        # Get JSON data from the request body
+        data = request.get_json()
+        if not data:
+            raise ValueError("No JSON data provided.")
 
+        # Validate request data using Pydantic schema
+        booking_request = BookingRequest(**data)
 
-# --- Health Check ---
-@app.get("/", summary="Health Check", tags=["System"])
-async def root():
-    return {"message": "RideShare API is running!"}
+        # Simulate network delay and backend processing time
+        time.sleep(1.5) # A 1.5-second delay
 
+        # Extract coordinates as tuples for calculations
+        pickup_coords_tuple = (booking_request.pickup_point.latitude, booking_request.pickup_point.longitude)
+        dropoff_coords_tuple = (booking_request.dropoff_point.latitude, booking_request.dropoff_point.longitude)
 
-# --- User Endpoints ---
-@app.post("/users/", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED, tags=["Users"])
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = models.User(name=user.name)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+        # Apply backend logic
+        total_fare = calculate_fare(pickup_coords_tuple, dropoff_coords_tuple)
+        assigned_driver = assign_driver(pickup_coords_tuple)
 
-@app.get("/users/", response_model=List[schemas.UserResponse], tags=["Users"])
-def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    users = db.query(models.User).offset(skip).limit(limit).all()
-    return users
-
-@app.get("/users/{user_id}", response_model=schemas.UserResponse, tags=["Users"])
-def read_user(user_id: uuid.UUID, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
-
-
-# --- Driver Endpoints ---
-@app.post("/drivers/", response_model=schemas.DriverResponse, status_code=status.HTTP_201_CREATED, tags=["Drivers"])
-def create_driver(driver: schemas.DriverCreate, db: Session = Depends(get_db)):
-    db_driver = models.Driver(**driver.model_dump())
-    db.add(db_driver)
-    db.commit()
-    db.refresh(db_driver)
-    return db_driver
-
-@app.get("/drivers/", response_model=List[schemas.DriverResponse], tags=["Drivers"])
-def read_drivers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    drivers = db.query(models.Driver).offset(skip).limit(limit).all()
-    return drivers
-
-@app.get("/drivers/{driver_id}", response_model=schemas.DriverResponse, tags=["Drivers"])
-def read_driver(driver_id: uuid.UUID, db: Session = Depends(get_db)):
-    driver = db.query(models.Driver).filter(models.Driver.id == driver_id).first()
-    if driver is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
-    return driver
-
-
-# --- Booking Endpoints ---
-@app.post("/book", response_model=schemas.BookingResponse, status_code=status.HTTP_201_CREATED, tags=["Bookings"])
-def create_booking(booking_request: schemas.BookingRequest, db: Session = Depends(get_db)):
-    # 1. Validate User
-    user = db.query(models.User).filter(models.User.id == booking_request.user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-
-    # 2. Find Closest Eligible Driver
-    pickup_coords = (booking_request.pickup_latitude, booking_request.pickup_longitude)
-    drop_coords = (booking_request.drop_latitude, booking_request.drop_longitude)
-
-    closest_driver = matching.find_closest_driver(
-        db,
-        pickup_coords[0],
-        pickup_coords[1]
-    )
-
-    if not closest_driver:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active drivers found or available with sufficient wallet balance."
+        # Construct the response using Pydantic schema
+        response = BookingResponse(
+            total_fare=total_fare,
+            driver_name=assigned_driver,
+            status="DISPATCHED / CONFIRMED"
         )
+        
+        # Return the response as JSON
+        return jsonify(response.dict()), 200
 
-    # 3. Calculate Distance and Fare
-    trip_distance_km = matching.calculate_distance_km(
-        pickup_coords[0], pickup_coords[1],
-        drop_coords[0], drop_coords[1]
-    )
-    total_fare = pricing.calculate_fare(trip_distance_km)
+    except ValueError as ve:
+        # Handle validation errors
+        return jsonify({"error": f"Invalid input: {str(ve)}"}), 400
+    except Exception as e:
+        # Catch any other unexpected errors
+        print(f"An unexpected error occurred: {e}")
+        return jsonify({"error": "An internal server error occurred."}), 500
 
-    # 4. Create and Save Booking to Database
-    new_booking = models.Booking(
-        user_id=booking_request.user_id,
-        driver_id=closest_driver.id,  # Assign the matched driver
-        total_fare=total_fare,
-        status="CONFIRMED", # Or PENDING, depending on business logic
-        pickup_address=booking_request.pickup_address,
-        drop_address=booking_request.drop_address,
-        created_at=models.datetime.utcnow() # Use models.datetime to prevent conflict with global datetime
-    )
-
-    db.add(new_booking)
-    db.commit()
-    db.refresh(new_booking)
-
-    return new_booking
-
-@app.get("/bookings/{booking_id}", response_model=schemas.BookingResponse, tags=["Bookings"])
-def get_booking_details(booking_id: uuid.UUID, db: Session = Depends(get_db)):
-    booking = db.query(models.Booking).filter(models.Booking.booking_id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found.")
-    return booking
-
-@app.get("/bookings/", response_model=List[schemas.BookingResponse], tags=["Bookings"])
-def list_bookings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    bookings = db.query(models.Booking).offset(skip).limit(limit).all()
-    return bookings
-
-# Optional: Seed initial data for testing
-@app.post("/seed_data", status_code=status.HTTP_200_OK, tags=["System"])
-def seed_data(db: Session = Depends(get_db)):
-    # Check if data already exists to avoid duplicates on multiple runs
-    if db.query(models.User).count() > 0 or db.query(models.Driver).count() > 0:
-        return {"message": "Data already exists. Skipping seeding."}
-
-    user1 = models.User(name="Alice Wonderland")
-    user2 = models.User(name="Charlie Chaplin")
-
-    driver1 = models.Driver(name="David Driver", latitude=34.053, longitude=-118.245, wallet_balance=150.0, is_active=True)
-    driver2 = models.Driver(name="Eve Escort", latitude=34.055, longitude=-118.250, wallet_balance=10.0, is_active=True) # Low balance
-    driver3 = models.Driver(name="Frank Fast", latitude=34.060, longitude=-118.240, wallet_balance=200.0, is_active=False) # Inactive
-    driver4 = models.Driver(name="Grace Go", latitude=34.050, longitude=-118.240, wallet_balance=75.0, is_active=True) # Closer to example pickup
-
-    db.add_all([user1, user2, driver1, driver2, driver3, driver4])
-    db.commit()
-    return {"message": "Sample users and drivers seeded successfully!"}
-
+if __name__ == '__main__':
+    # Run the Flask application
+    # debug=True enables reloader and debugger (good for development)
+    # host='0.0.0.0' makes the server accessible from other devices on the network
+    # port=5000 is the default port the frontend expects
+    app.run(debug=True, host='127.0.0.1', port=5000)
 ```
