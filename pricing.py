@@ -1,55 +1,30 @@
-import math
-from typing import Tuple
+# pricing.py
+# This file would contain logic related to calculating trip fares,
+# surge pricing, discounts, and other financial aspects of bookings.
+# It is not directly modified by the current requirements but would be part
+# of a complete ride-sharing backend system.
 
-def calculate_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
-    """
-    Calculates the great-circle distance between two points on the Earth
-    (specified in decimal degrees) using the Haversine formula.
+class PricingService:
+    def calculate_fare(self, distance_km: float, duration_minutes: float, base_fare: float = 2.50) -> float:
+        """
+        Calculates a basic fare based on distance and duration.
+        In a real system, this would be much more complex, considering
+        time of day, demand, vehicle type, tolls, etc.
+        """
+        price_per_km = 1.20
+        price_per_minute = 0.20
+        fare = base_fare + (distance_km * price_per_km) + (duration_minutes * price_per_minute)
+        return round(fare, 2)
 
-    Args:
-        p1 (Tuple[float, float]): (latitude, longitude) of the first point.
-        p2 (Tuple[float, float]): (latitude, longitude) of the second point.
+    def apply_surge(self, original_fare: float, surge_multiplier: float) -> float:
+        """
+        Applies a surge multiplier to the fare.
+        """
+        return round(original_fare * surge_multiplier, 2)
 
-    Returns:
-        float: Distance in kilometers.
-    """
-    R = 6371  # Earth radius in kilometers
-
-    lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
-    lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
-
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-
-    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    distance = R * c
-    return distance
-
-def calculate_fare(pickup_coords: Tuple[float, float], dropoff_coords: Tuple[float, float]) -> float:
-    """
-    Calculates a mock fare based on distance between pickup and dropoff points.
-
-    Args:
-        pickup_coords (Tuple[float, float]): (latitude, longitude) of pickup.
-        dropoff_coords (Tuple[float, float]): (latitude, longitude) of dropoff.
-
-    Returns:
-        float: Rounded total fare.
-    """
-    distance_km = calculate_distance(pickup_coords, dropoff_coords)
-
-    # Simple pricing model
-    base_fare = 50.0  # INR
-    per_km_rate = 15.0 # INR/km
-    minimum_fare_distance_km = 1.0 # Minimum distance for full per_km_rate
-
-    effective_distance_km = max(distance_km, minimum_fare_distance_km)
-    fare = base_fare + (effective_distance_km * per_km_rate)
-
-    # Add a surge factor for demonstration (e.g., random 1.0 to 1.5x)
-    # surge_factor = 1.0 + (random.random() * 0.5)
-    # fare *= surge_factor
-
-    return round(fare, 2)
+# You might have endpoints in app.py that call this service, e.g.:
+# @app.post("/booking/{booking_id}/estimate-fare")
+# async def get_fare_estimate(...):
+#     pricing_service = PricingService()
+#     fare = pricing_service.calculate_fare(...)
+#     return {"estimated_fare": fare}

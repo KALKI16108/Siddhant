@@ -1,23 +1,27 @@
 from pydantic import BaseModel
-from typing import Tuple, List
+from typing import Optional
 
-class Coordinates(BaseModel):
-    """Represents geographical coordinates."""
+# Base model for driver location updates
+class DriverLocationUpdate(BaseModel):
+    driver_id: str
     latitude: float
     longitude: float
 
-class BookingRequest(BaseModel):
-    """Schema for the incoming booking request."""
-    user_id: str
-    pickup_point: Coordinates
-    dropoff_point: Coordinates
+# Base model for driver status updates
+class DriverStatusUpdate(BaseModel):
+    driver_id: str
+    is_active: bool  # True for On Duty, False for Off Duty
 
-class BookingResponse(BaseModel):
-    """Schema for the outgoing booking response."""
-    total_fare: float
-    driver_name: str
-    status: str
-    # You could add more fields here like:
-    # estimated_eta: int # in minutes
-    # driver_location: Coordinates
-    # route_points: List[Coordinates]
+# Response model for order tracking
+class OrderTrackingResponse(BaseModel):
+    booking_id: str
+    user_id: str
+    status: str  # e.g., 'pending', 'accepted', 'en_route', 'completed', 'cancelled'
+    pickup_latitude: float
+    pickup_longitude: float
+    dropoff_latitude: float
+    dropoff_longitude: float
+    driver_id: Optional[str] = None
+    driver_latitude: Optional[float] = None
+    driver_longitude: Optional[float] = None
+    eta_minutes: Optional[float] = None # Estimated Time of Arrival for the driver to reach pickup location
