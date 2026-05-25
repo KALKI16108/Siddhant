@@ -1,70 +1,54 @@
-import math
-from typing import List, Dict, Any
-import psycopg2.extras # Needed for DictCursor
+# matching.py - Module for driver matching and proximity calculations
+from typing import List, Optional
+from haversine import haversine, Unit
+from sqlalchemy.orm import Session
+from .models import Driver
 
-# Re-use the distance calculation logic from pricing.py
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def find_closest_driver(
+    db: Session,
+    pickup_latitude: float,
+    pickup_longitude: float,
+    min_wallet_balance: float = 20.0
+) -> Optional[Driver]:
     """
-    Calculates the distance between two geographical points using the Haversine formula.
-    Returns distance in kilometers.
+    Finds the closest active driver with a sufficient wallet balance from the database.
+
+    Args:
+        db: SQLAlchemy session.
+        pickup_latitude: Latitude of the pickup location.
+        pickup_longitude: Longitude of the pickup location.
+        min_wallet_balance: Minimum wallet balance required for a driver to be eligible.
+
+    Returns:
+        The closest Driver object, or None if no suitable driver is found.
     """
-    R = 6371  # Radius of Earth in kilometers
+    # Query all active drivers with sufficient wallet balance
+    eligible_drivers: List[Driver] = db.query(Driver).filter(
+        Driver.is_active == True,
+        Driver.wallet_balance >= min_wallet_balance
+    ).all()
 
-    lat1_rad = math.radians(lat1)
-    lon1_rad = math.radians(lon1)
-    lat2_rad = math.radians(lat2)
-    lon2_rad = math.radians(lon2)
+    if not eligible_drivers:
+        return None
 
-    dlon = lon2_rad - lon1_rad
-    dlat = lat2_rad - lat1_rad
+    pickup_coords = (pickup_latitude, pickup_longitude)
+    closest_driver: Optional[Driver] = None
+    min_distance_km = float('inf')
 
-    a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    for driver in eligible_drivers:
+        driver_coords = (driver.latitude, driver.longitude)
+        distance = haversine(pickup_coords, driver_coords, unit=Unit.KILOMETERS)
 
-    distance = R * c
-    return distance
+        if distance < min_distance_km:
+            min_distance_km = distance
+            closest_driver = driver
+            
+    return closest_driver
 
-def find_available_drivers(
-    db_conn, # Accepts an active psycopg2 database connection
-    user_latitude: float,
-    user_longitude: float,
-    radius_km: float = 5
-) -> List[Dict[str, Any]]:
+def calculate_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
-    Finds available drivers within a specified radius from the user's location.
-    Queries the database for 'available' drivers and then filters them by distance.
+    Calculates the Haversine distance between two sets of coordinates in kilometers.
     """
-    available_drivers = []
-    try:
-        # Use DictCursor to fetch rows as dictionaries
-        with db_conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            # For simplicity, we'll fetch all 'available' drivers and filter in Python.
-            # For high-performance, real-time matching, PostGIS extensions would be used
-            # for spatial indexing and queries directly in SQL.
-            cursor.execute(
-                "SELECT id, name, latitude, longitude, vehicle_type, price_per_km FROM drivers WHERE status = 'available';"
-            )
-            drivers_from_db = cursor.fetchall()
-
-            for driver in drivers_from_db:
-                driver_lat = driver['latitude']
-                driver_lon = driver['longitude']
-                distance = calculate_distance(user_latitude, user_longitude, driver_lat, driver_lon)
-
-                if distance <= radius_km:
-                    driver_data = dict(driver) # Convert psycopg2.extras.DictRow to a standard dict
-                    driver_data['distance_from_user'] = distance
-                    available_drivers.append(driver_data)
-
-        # Sort drivers by distance (closest first)
-        available_drivers.sort(key=lambda d: d['distance_from_user'])
-        return available_drivers
-
-    except Exception as e:
-        print(f"Error finding drivers: {e}")
-        # In a real application, proper logging and error handling would be implemented
-        return []
-
-if __name__ == "__main__":
-    print("This file defines driver matching logic, typically called by app.py.")
-    print("It requires a database connection to function, so it cannot be run directly for a full demo.")
+    coords1 = (lat1, lon1)
+    coords2 = (lat2, lon2)
+    return haversine(coords1, coords2, unit=Unit.KILOMETERS)
