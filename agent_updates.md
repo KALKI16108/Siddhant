@@ -1,53 +1,49 @@
+Here are the updated `app.py` and the new `render.yaml` files as per your requirements.
+
 File Name: app.py
 ```python
-import os
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+import os
 
 app = FastAPI()
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
+async def serve_frontend_dashboard():
     """
-    Serves the front-end dashboard (index.html) from the repository root.
+    Serves the static 'index.html' file from the repository root as the frontend dashboard.
     """
     try:
-        # Construct the path to index.html relative to the current file
-        # For production, it's often safer to use __file__ and os.path.join
-        # For this scenario, assuming index.html is in the same directory as app.py
-        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+        # Construct the absolute path to index.html
+        # This assumes index.html is in the same directory as app.py
+        # which is typically the repository root for simple deployments.
+        file_path = os.path.join(os.path.dirname(__file__), "index.html")
         with open(file_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            html_content = f.read()
+        return HTMLResponse(content=html_content, status_code=200)
     except FileNotFoundError:
-        # Fallback if index.html is not found
         return HTMLResponse(
-            content="<h1>Dashboard Not Found</h1><p>The <code>index.html</code> file could not be located.</p>",
+            content="<h1>Frontend Dashboard Not Found</h1><p>The 'index.html' file could not be found. Please ensure it is in the repository root directory.</p>",
             status_code=404
         )
     except Exception as e:
-        # Generic error handling
         return HTMLResponse(
-            content=f"<h1>Server Error</h1><p>An unexpected error occurred: {e}</p>",
+            content=f"<h1>Error Loading Frontend Dashboard</h1><p>An unexpected error occurred: {e}</p>",
             status_code=500
         )
 
 @app.get("/api/health")
-async def api_health_check():
+async def health_check():
     """
     Returns a health check payload for API system monitoring.
     """
     return {
         "status": "healthy",
-        "service": "chabri-mahek-engine",
+        "message": "Chabri Mahek Engine API is up and running!",
         "version": "1.0.0", # Example version
-        "environment": os.getenv("ENVIRONMENT", "development")
+        "service": "chabri-mahek-engine-backend"
     }
 
-# You can add other API endpoints below this line
-# For example:
-# @app.get("/api/items")
-# async def get_items():
-#     return {"items": ["item1", "item2"]}
 ```
 
 File Name: render.yaml
@@ -57,19 +53,10 @@ services:
     name: chabri-mahek-engine
     env: python
     buildCommand: pip install -r requirements.txt
-    # The startCommand uses uvicorn to run the FastAPI application.
-    # app:app refers to the 'app' variable within the 'app.py' module.
-    # --host 0.0.0.0 makes the server accessible externally.
-    # --port $PORT ensures it listens on the port provided by the hosting environment.
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
-      # DATABASE_URL is essential for connecting to a database.
-      # sync: false means it's not automatically synced from a git repo
-      # and should be manually configured in Render's environment variables.
       - key: DATABASE_URL
         sync: false
-      # GEMINI_API_KEY for accessing external AI services.
-      # Also marked as sync: false for security and environment-specific configuration.
       - key: GEMINI_API_KEY
         sync: false
 ```
