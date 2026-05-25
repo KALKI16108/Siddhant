@@ -1,5 +1,3 @@
-File Name: seed_db.py
-```python
 import os
 import random
 import psycopg2
@@ -160,24 +158,3 @@ if __name__ == "__main__":
     # Set your DATABASE_URL environment variable before running:
     # export DATABASE_URL="postgresql://user:password@host:port/database_name"
     seed_drivers_data(num_drivers=10)
-```
-
-File Name: schemas.py
-```python
-
-```
-
-File Name: pricing.py
-```python
-
-```
-
-File Name: matching.py
-```python
-
-```
-
-File Name: app.py
-```python
-
-```
