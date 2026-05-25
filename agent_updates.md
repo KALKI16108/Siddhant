@@ -1,43 +1,75 @@
-File Name: requirements.txt
-```text
-fastapi
-uvicorn
-sqlalchemy
-psycopg2-binary
-pydantic
-httpx
-google-generativeai
-GitPython
+File Name: app.py
+```python
+import os
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    """
+    Serves the front-end dashboard (index.html) from the repository root.
+    """
+    try:
+        # Construct the path to index.html relative to the current file
+        # For production, it's often safer to use __file__ and os.path.join
+        # For this scenario, assuming index.html is in the same directory as app.py
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+        with open(file_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        # Fallback if index.html is not found
+        return HTMLResponse(
+            content="<h1>Dashboard Not Found</h1><p>The <code>index.html</code> file could not be located.</p>",
+            status_code=404
+        )
+    except Exception as e:
+        # Generic error handling
+        return HTMLResponse(
+            content=f"<h1>Server Error</h1><p>An unexpected error occurred: {e}</p>",
+            status_code=500
+        )
+
+@app.get("/api/health")
+async def api_health_check():
+    """
+    Returns a health check payload for API system monitoring.
+    """
+    return {
+        "status": "healthy",
+        "service": "chabri-mahek-engine",
+        "version": "1.0.0", # Example version
+        "environment": os.getenv("ENVIRONMENT", "development")
+    }
+
+# You can add other API endpoints below this line
+# For example:
+# @app.get("/api/items")
+# async def get_items():
+#     return {"items": ["item1", "item2"]}
 ```
 
-File Name: Dockerfile
-```dockerfile
-# Use a clean, lightweight base image for production
-FROM python:3.11-slim
-
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy the requirements file first to leverage Docker's layer caching
-# This allows rebuilding dependencies only when requirements.txt changes
-COPY requirements.txt .
-
-# Install the required production dependencies
-# --no-cache-dir prevents pip from storing cache, reducing image size
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code into the container
-# Assuming the application's root directory (where Dockerfile resides)
-# contains the main app files, including app.py
-COPY . .
-
-# Expose port 8000 for incoming API requests
-EXPOSE 8000
-
-# Define the command to run the application using uvicorn
-# 'app:app' refers to a FastAPI instance named 'app' within a file named 'app.py'
-# --host 0.0.0.0 makes the app accessible from outside the container
-# --port 8000 ensures it listens on the exposed port
-# Auto-reloads are turned off for production safety
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+File Name: render.yaml
+```yaml
+services:
+  - type: web
+    name: chabri-mahek-engine
+    env: python
+    buildCommand: pip install -r requirements.txt
+    # The startCommand uses uvicorn to run the FastAPI application.
+    # app:app refers to the 'app' variable within the 'app.py' module.
+    # --host 0.0.0.0 makes the server accessible externally.
+    # --port $PORT ensures it listens on the port provided by the hosting environment.
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # DATABASE_URL is essential for connecting to a database.
+      # sync: false means it's not automatically synced from a git repo
+      # and should be manually configured in Render's environment variables.
+      - key: DATABASE_URL
+        sync: false
+      # GEMINI_API_KEY for accessing external AI services.
+      # Also marked as sync: false for security and environment-specific configuration.
+      - key: GEMINI_API_KEY
+        sync: false
 ```
