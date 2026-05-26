@@ -1,328 +1,330 @@
+As an Autonomous Database Engineer, I will establish a secure connection to your Supabase PostgreSQL database using the provided `DATABASE_URL`. My solution will leverage SQLAlchemy for robust connection pooling and ORM capabilities, ensuring efficient and reliable database interactions. I will define and initialize the 'users', 'drivers', and 'bookings' tables, and automatically seed the 'drivers' table with realistic data for immediate operational readiness.
+
+**Setup Instructions:**
+
+1.  **Environment Variable:** Ensure your Supabase connection string is set as an environment variable named `DATABASE_URL`.
+    *   Example for Linux/macOS: `export DATABASE_URL="postgresql://postgres:[YOUR_PASSWORD]@db.[YOUR_PROJECT_REF].supabase.co:5432/postgres"`
+    *   Example for Windows (cmd): `set DATABASE_URL="postgresql://postgres:[YOUR_PASSWORD]@db.[YOUR_PROJECT_REF].supabase.co:5432/postgres"`
+    *   Alternatively, you can place it in a `.env` file and use `python-dotenv`.
+
+2.  **Dependencies:** Install the required Python packages:
+    ```bash
+    pip install sqlalchemy psycopg2-binary python-dotenv
+    ```
+    (Note: `psycopg2-binary` is the PostgreSQL adapter, `python-dotenv` is optional but recommended for local development to load `DATABASE_URL`.)
+
+3.  **Execution:** Run the `app.py` script. It will connect, create tables (if they don't exist), and seed the driver data.
+    ```bash
+    python app.py
+    ```
+
+---
+
 File Name: schemas.py
 ```python
-from pydantic import BaseModel
-from typing import Optional
+import datetime
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-# Pydantic model for creating a new user (request body)
-class UserCreate(BaseModel):
-    username: str
-    password: str
-
-# Pydantic model for user authentication (request body for login)
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-# Pydantic model for displaying basic user information (response body)
-class UserResponse(BaseModel):
-    id: int
-    username: str
-
-    class Config:
-        orm_mode = True  # Enable ORM mode to read data from SQLAlchemy models
-
-# Pydantic model for JWT token response
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-# Pydantic model for data inside the JWT token
-class TokenData(BaseModel):
-    username: Optional[str] = None
-```
-
-File Name: pricing.py
-```python
-# This file is a placeholder as per the critical formatting requirement.
-# It is not directly related to the current objective of implementing a user authentication system.
-
-# Example placeholder content if pricing functionality were to be added:
-# def calculate_delivery_price(distance_km: float, weight_kg: float) -> float:
-#     base_fee = 5.0
-#     price_per_km = 0.5
-#     price_per_kg = 1.0
-#     total_price = base_fee + (distance_km * price_per_km) + (weight_kg * price_per_kg)
-#     return round(total_price, 2)
-```
-
-File Name: matching.py
-```python
-# This file is a placeholder as per the critical formatting requirement.
-# It is not directly related to the current objective of implementing a user authentication system.
-
-# Example placeholder content if matching functionality were to be added:
-# from typing import List, Dict
-#
-# def find_best_driver_for_delivery(delivery_id: str, available_drivers: List[Dict]) -> Optional[Dict]:
-#     # In a real system, this would involve complex logic like:
-#     # - Driver location vs. pickup location
-#     # - Driver availability and current load
-#     # - Vehicle capacity
-#     # - Estimated time of arrival
-#
-#     if not available_drivers:
-#         return None
-#
-#     # For demonstration, just pick the first available driver
-#     print(f"Matching delivery {delivery_id} with driver {available_drivers[0]['id']}")
-#     return available_drivers[0]
-```
-
-File Name: app.py
-```python
-import os
-from datetime import datetime, timedelta
-from typing import Optional
-
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from passlib.context import CryptContext
-from jose import JWTError, jwt
-
-# Import Pydantic schemas from the schemas.py file
-from schemas import UserCreate, LoginRequest, UserResponse, Token, TokenData
-
-# --- Database Configuration ---
-# Using SQLite for development and testing simplicity.
-# For production, replace with a PostgreSQL URL, e.g., "postgresql://user:password@host:port/dbname"
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- Database Model ---
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = 'users'
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-# --- Security Configuration ---
-# In a real application, SECRET_KEY should be loaded from environment variables
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-that-you-should-change")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+    bookings = relationship("Booking", back_populates="user")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}')>"
 
-# --- Utility Functions ---
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies a plain password against a hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
+class Driver(Base):
+    __tablename__ = 'drivers'
 
-def get_password_hash(password: str) -> str:
-    """Hashes a plain password."""
-    return pwd_context.hash(password)
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    lat = Column(Float, nullable=False) # Latitude
+    lng = Column(Float, nullable=False) # Longitude
+    wallet = Column(Float, nullable=False, default=0.0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Creates a JWT access token."""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    bookings = relationship("Booking", back_populates="driver")
 
-# --- Database Dependencies ---
+    def __repr__(self):
+        return f"<Driver(id={self.id}, name='{self.name}', lat={self.lat}, lng={self.lng}, wallet={self.wallet})>"
+
+class Booking(Base):
+    __tablename__ = 'bookings'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    driver_id = Column(Integer, ForeignKey('drivers.id'), nullable=True) # Can be null before assignment
+    start_lat = Column(Float, nullable=False)
+    start_lng = Column(Float, nullable=False)
+    end_lat = Column(Float, nullable=False)
+    end_lng = Column(Float, nullable=False)
+    status = Column(String, default="pending", nullable=False) # e.g., 'pending', 'accepted', 'completed', 'cancelled'
+    fare = Column(Float, nullable=True) # Null until calculated/completed
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="bookings")
+    driver = relationship("Driver", back_populates="bookings")
+
+    def __repr__(self):
+        return f"<Booking(id={self.id}, user_id={self.user_id}, driver_id={self.driver_id}, status='{self.status}')>"
+```
+
+File Name: database.py
+```python
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
+
+# Retrieve DATABASE_URL from environment variables
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set. Please set it before running the application.")
+
+# Create the SQLAlchemy engine
+# pool_size: The number of connections to keep open in the pool.
+# max_overflow: The number of connections that can be opened beyond the pool_size.
+# pool_recycle: The number of seconds after which a connection is automatically recycled.
+# This is crucial for long-running applications to handle database restarts or disconnections.
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,        # Keep 10 connections in the pool
+    max_overflow=5,      # Allow up to 5 additional connections
+    pool_recycle=3600,   # Recycle connections after 1 hour (3600 seconds)
+    echo=False           # Set to True to see SQL statements for debugging
+)
+
+# Create a SessionLocal class to get database sessions
+# Each instance of SessionLocal will be a database session
+# The 'autocommit' is usually False in web applications to allow explicit commit/rollback
+# The 'autoflush' is usually True to flush changes to the database before query execution
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 def get_db():
-    """Dependency to provide a database session."""
+    """Dependency to get a database session."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# --- CRUD Operations ---
-def get_user_by_username(db: Session, username: str) -> Optional[User]:
-    """Retrieves a user by username."""
-    return db.query(User).filter(User.username == username).first()
-
-def create_db_user(db: Session, user: UserCreate) -> User:
-    """Creates a new user in the database."""
-    hashed_password = get_password_hash(user.password)
-    db_user = User(username=user.username, hashed_password=hashed_password)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
-
-# --- Authentication Dependencies ---
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    """Dependency to get the current authenticated user from a JWT token."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def check_db_connection():
+    """Verifies the database connection."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
-        raise credentials_exception
-    user = get_user_by_username(db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+        with engine.connect() as connection:
+            connection.execute("SELECT 1")
+        print("Database connection successful!")
+        return True
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return False
 
-# --- FastAPI App ---
-app = FastAPI(
-    title="User Authentication System",
-    description="A complete user authentication system with JWT tokens.",
-    version="1.0.0",
-)
+if __name__ == "__main__":
+    # This block will only run if database.py is executed directly
+    print("Attempting to connect to the database...")
+    check_db_connection()
+```
 
-# Create database tables on startup
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
+File Name: app.py
+```python
+import random
+from sqlalchemy.exc import SQLAlchemyError
+from database import engine, SessionLocal, check_db_connection
+from schemas import Base, User, Driver, Booking # Import Base and models from schemas
 
-# --- Routes ---
-
-@app.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    """
-    Register a new user.
-    Requires a unique username and a password.
-    """
-    db_user = get_user_by_username(db, username=user.username)
-    if db_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
-    return create_db_user(db=db, user=user)
-
-@app.post("/login", response_model=Token, tags=["Authentication"])
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """
-    Authenticate a user and return an access token.
-    Requires username and password.
-    """
-    user = get_user_by_username(db, username=form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@app.get("/protected", response_model=UserResponse, tags=["Protected"])
-async def read_protected_route(current_user: User = Depends(get_current_user)):
-    """
-    An example protected endpoint.
-    Requires a valid JWT access token to access.
-    Returns the currently authenticated user's information.
-    """
-    return current_user
-
-# --- Integration Test Suite ---
-# This section contains integration tests using FastAPI's TestClient.
-# These tests would typically reside in a separate file (e.g., `tests/test_app.py`)
-# but are included here to fulfill the "self-heal" and "test" aspects within a single file context.
-
-# Override the database dependency for testing to ensure isolation
-def override_get_db():
-    """Provides an independent database session for each test."""
+def create_all_tables():
+    """Creates all tables defined in Base metadata."""
+    print("Creating database tables...")
     try:
-        db = SessionLocal()
-        # In a real testing scenario, you might want to wrap this in a transaction
-        # and rollback at the end of each test to ensure a clean state without
-        # dropping and recreating tables repeatedly. For simplicity here,
-        # we'll drop all tables after the entire test suite.
-        yield db
+        Base.metadata.create_all(bind=engine)
+        print("Tables created successfully or already exist.")
+    except SQLAlchemyError as e:
+        print(f"Error creating tables: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred during table creation: {e}")
+
+# Approximate coordinates for Mumbai transit hubs
+MUMBAI_TRANSIT_HUBS = {
+    "Bandra": {"lat": 19.0594, "lng": 72.8300},
+    "Andheri": {"lat": 19.1170, "lng": 72.8465},
+    "Dadar": {"lat": 19.0177, "lng": 72.8436},
+    "Kurla": {"lat": 19.0700, "lng": 72.8872},
+}
+
+def seed_drivers_data(num_drivers=10):
+    """Seeds the drivers table with starter profiles."""
+    db = SessionLocal()
+    try:
+        # Check if drivers table is empty
+        existing_drivers_count = db.query(Driver).count()
+        if existing_drivers_count >= num_drivers:
+            print(f"Drivers table already contains {existing_drivers_count} drivers. Skipping seeding.")
+            return
+
+        print(f"Seeding {num_drivers} driver profiles...")
+        drivers_to_add = []
+        hub_names = list(MUMBAI_TRANSIT_HUBS.keys())
+        driver_names = [
+            "Rajesh Sharma", "Priya Singh", "Amit Kumar", "Neha Patel", "Suresh Yadav",
+            "Anjali Devi", "Ganesh Rao", "Divya Menon", "Kiran Shah", "Vijay Gupta",
+            "Manoj Kumar", "Shweta Joshi"
+        ]
+
+        for i in range(num_drivers):
+            name = random.choice(driver_names)
+            hub_name = random.choice(hub_names)
+            location = MUMBAI_TRANSIT_HUBS[hub_name]
+            
+            # Add some randomness to coordinates for diversity
+            lat = location["lat"] + random.uniform(-0.005, 0.005)
+            lng = location["lng"] + random.uniform(-0.005, 0.005)
+            
+            wallet = round(random.uniform(25.0, 500.0), 2) # Wallet balance > ₹20
+            is_active = random.choice([True, True, False]) # More likely to be active
+
+            driver = Driver(name=name, lat=lat, lng=lng, wallet=wallet, is_active=is_active)
+            drivers_to_add.append(driver)
+
+        db.add_all(drivers_to_add)
+        db.commit()
+        print(f"Successfully seeded {len(drivers_to_add)} driver profiles.")
+    except SQLAlchemyError as e:
+        db.rollback()
+        print(f"Error seeding drivers data: {e}")
+    except Exception as e:
+        db.rollback()
+        print(f"An unexpected error occurred during seeding: {e}")
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
+def main():
+    """Main function to run database initialization and seeding."""
+    print("Starting database initialization process...")
 
-# Client fixture for tests
-client = TestClient(app)
+    # 1. Verify database connection
+    if not check_db_connection():
+        print("Exiting due to database connection failure.")
+        return
 
-# Test execution setup and teardown
-# Ensure tables are created before running tests and dropped afterwards
-# This uses the app's startup event for table creation, and manual teardown.
-# In a pytest fixture, this would be handled per-test.
-Base.metadata.drop_all(bind=engine) # Start fresh
-Base.metadata.create_all(bind=engine)
+    # 2. Create tables
+    create_all_tables()
 
-def run_tests():
-    """
-    Executes the defined integration tests.
-    In a real self-healing system, this would involve a robust test runner like `pytest`.
-    """
-    print("\n--- Running Integration Tests ---")
+    # 3. Seed drivers data
+    seed_drivers_data(10)
 
-    # Helper function for test assertions
-    def assert_test(test_name, condition):
-        status = "PASSED" if condition else "FAILED"
-        print(f"[{status}] {test_name}")
-        if not condition:
-            raise AssertionError(f"Test Failed: {test_name}")
-
-    # Test 1: User Registration Success
-    response = client.post("/register", json={"username": "testuser1", "password": "password1"})
-    assert_test("Test 1: User Registration Success", response.status_code == status.HTTP_201_CREATED and response.json()["username"] == "testuser1")
-
-    # Test 2: User Registration - Existing Username
-    response = client.post("/register", json={"username": "testuser1", "password": "password1"})
-    assert_test("Test 2: User Registration - Existing Username", response.status_code == status.HTTP_400_BAD_REQUEST and "Username already registered" in response.json()["detail"])
-
-    # Test 3: User Login Success
-    response = client.post("/login", data={"username": "testuser1", "password": "password1"})
-    assert_test("Test 3: User Login Success", response.status_code == status.HTTP_200_OK and "access_token" in response.json())
-    token = response.json()["access_token"]
-
-    # Test 4: Protected Route Access Success
-    response = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
-    assert_test("Test 4: Protected Route Access Success", response.status_code == status.HTTP_200_OK and response.json()["username"] == "testuser1")
-
-    # Test 5: User Login - Incorrect Password
-    response = client.post("/login", data={"username": "testuser1", "password": "wrongpassword"})
-    assert_test("Test 5: User Login - Incorrect Password", response.status_code == status.HTTP_401_UNAUTHORIZED and "Incorrect username or password" in response.json()["detail"])
-
-    # Test 6: User Login - Non-existent User
-    response = client.post("/login", data={"username": "nonexistent", "password": "anypassword"})
-    assert_test("Test 6: User Login - Non-existent User", response.status_code == status.HTTP_401_UNAUTHORIZED and "Incorrect username or password" in response.json()["detail"])
-
-    # Test 7: Protected Route - No Token
-    response = client.get("/protected")
-    assert_test("Test 7: Protected Route - No Token", response.status_code == status.HTTP_401_UNAUTHORIZED and "Not authenticated" in response.json()["detail"])
-
-    # Test 8: Protected Route - Invalid Token
-    response = client.get("/protected", headers={"Authorization": "Bearer invalidtoken"})
-    assert_test("Test 8: Protected Route - Invalid Token", response.status_code == status.HTTP_401_UNAUTHORIZED and "Could not validate credentials" in response.json()["detail"])
-
-    print("\nAll integration tests passed successfully!")
-
-    # Clean up database after tests
-    Base.metadata.drop_all(bind=engine)
-    if "sqlite" in DATABASE_URL and os.path.exists("./test.db"):
-        os.remove("./test.db") # Remove the SQLite test database file
-
+    print("\nDatabase initialization complete.")
+    print("You can now connect to your Supabase project and verify the tables and data.")
 
 if __name__ == "__main__":
-    # In a real self-healing loop, this `run_tests()` function would be called
-    # and its output analyzed. If failures occurred, automated patching logic
-    # would attempt to fix the code and re-run tests until successful.
-    try:
-        run_tests()
-    except AssertionError as e:
-        print(f"\n--- SELF-HEAL REQUIRED ---")
-        print(f"Error: {e}")
-        print("An error occurred during testing. In a self-healing system, I would now analyze the traceback,")
-        print("patch the code to fix the issue, and automatically re-run the tests until all pass.")
-        print("For this demonstration, the provided code is already fully functional and passing all tests.")
+    main()
+```
+
+File Name: pricing.py
+```python
+# This file is a placeholder for future functionality related to pricing calculations.
+# For example, it could contain logic for:
+# - Calculating fare based on distance and time.
+# - Applying surge pricing.
+# - Handling different service classes (e.g., standard, premium).
+# - Managing promotions or discounts.
+
+def calculate_fare(distance_km: float, time_minutes: float) -> float:
+    """
+    A placeholder function to calculate the fare for a booking.
+    Actual implementation would involve complex logic based on city,
+    time of day, driver availability, etc.
+    """
+    base_fare = 50.0  # Example base fare
+    fare_per_km = 12.0
+    fare_per_minute = 1.5
+
+    estimated_fare = base_fare + (distance_km * fare_per_km) + (time_minutes * fare_per_minute)
+    return round(estimated_fare, 2)
+
+if __name__ == '__main__':
+    print("Pricing module placeholder. Example fare calculation:")
+    # Assuming a 10 km ride that takes 20 minutes
+    fare = calculate_fare(distance_km=10, time_minutes=20)
+    print(f"Estimated fare for 10km/20min ride: ₹{fare}")
+
+```
+
+File Name: matching.py
+```python
+# This file is a placeholder for future functionality related to driver-user matching.
+# For example, it could contain logic for:
+# - Finding the closest available driver to a user's pickup location.
+# - Implementing sophisticated matching algorithms (e.g., considering driver rating, vehicle type).
+# - Handling real-time driver availability and status updates.
+# - Optimizing dispatching for multiple concurrent requests.
+
+from typing import List, Dict
+
+def find_closest_driver(user_location: Dict[str, float], available_drivers: List[Dict]) -> Dict:
+    """
+    A placeholder function to find the closest driver.
+    In a real system, this would involve geospatial queries and
+    more complex ranking.
+    """
+    if not available_drivers:
+        return None
+
+    closest_driver = None
+    min_distance_sq = float('inf') # Use squared distance for simpler comparison
+
+    user_lat = user_location['lat']
+    user_lng = user_location['lng']
+
+    for driver in available_drivers:
+        driver_lat = driver['lat']
+        driver_lng = driver['lng']
+
+        # Simple Euclidean distance (squared for comparison, avoids sqrt)
+        distance_sq = (user_lat - driver_lat)**2 + (user_lng - driver_lng)**2
+
+        if distance_sq < min_distance_sq:
+            min_distance_sq = distance_sq
+            closest_driver = driver
+
+    return closest_driver
+
+if __name__ == '__main__':
+    print("Matching module placeholder. Example driver matching:")
+    
+    sample_user_location = {"lat": 19.0600, "lng": 72.8310} # Near Bandra
+    
+    sample_drivers = [
+        {"id": 1, "name": "Driver A", "lat": 19.0610, "lng": 72.8320, "is_active": True},
+        {"id": 2, "name": "Driver B", "lat": 19.1200, "lng": 72.8480, "is_active": True}, # Near Andheri
+        {"id": 3, "name": "Driver C", "lat": 19.0550, "lng": 72.8280, "is_active": True},
+        {"id": 4, "name": "Driver D", "lat": 19.0180, "lng": 72.8440, "is_active": False}, # Near Dadar, but inactive
+    ]
+
+    active_drivers = [d for d in sample_drivers if d['is_active']]
+    
+    closest = find_closest_driver(sample_user_location, active_drivers)
+    
+    if closest:
+        print(f"Closest active driver to user at {sample_user_location} is: {closest['name']} (ID: {closest['id']})")
+    else:
+        print("No active drivers found.")
+
 ```
