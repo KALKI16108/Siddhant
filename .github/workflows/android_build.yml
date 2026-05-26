@@ -22,28 +22,23 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install Application Modules & Dependencies
+      - name: Create Web Root Folder
+        run: |
+          mkdir -p www
+          if [ -f "index.html" ]; then
+            cp index.html www/index.html
+          else
+            echo "<h1>AIFlowix Engine Ready</h1>" > www/index.html
+          fi
+
+      - name: Install Capacitor Core Dependencies
         run: |
           npm install @capacitor/core @capacitor/cli
           npm install @capacitor/android
-          if [ ! -d "www" ]; then mkdir www; fi
-          if [ -f "index.html" ]; then cp index.html www/index.html; else echo "<h1>AIFlowix Engine Ready</h1>" > www/index.html; fi
 
-      - name: Inject Hardware Permission Configurations
+      - name: Initialize Android Native Project Structural Layers
         run: |
-          npx cap init "AIFlowix Logistics Terminal" "in.aflowix.logistics" --web-dir=www || true
-          npx cap add android || true
-          npx cap sync android
-
-      - name: Compile Production Android Native Binary (APK)
-        run: |
-          cd android && ./gradlew assembleDebug
-
-      - name: Upload Finished APK Package Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AIFlowix-Mobile-Terminal-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          npx cap init "AIFlowix Logistics Terminal" "in.aflowix.logistics" --web-dir=www --confirm || true
           npx cap add android || true
           npx cap sync android
 
