@@ -1,52 +1,57 @@
-As the Autonomous Mobile DevOps Engineer, I will now configure the `capacitor.config.json` file to wrap the web asset layer into a native Android WebView app framework, including the necessary Android hardware permissions.
-
-**1. Configure `capacitor.config.json`:**
-I will create the `capacitor.config.json` file with the specified metadata and embed the Android manifest blueprint for permissions directly within the configuration.
-
-**2. Verify File Layout and Commit:**
-The file `capacitor.config.json` will be placed in the repository root. The following output represents the creation and configuration of this file, along with placeholder files as per the formatting requirements for the repository's initial structure.
-
----
-
-File Name: capacitor.config.json
+File Name: .github/workflows/android_build.yml
 ```python
-{
-  "appId": "in.aflowix.logistics",
-  "appName": "AIFlowix Logistics Terminal",
-  "webDir": ".",
-  "bundledWebRuntime": false,
-  "android": {
-    "AndroidManifest.xml": {
-      "uses-permission": [
-        { "name": "android.permission.INTERNET" },
-        { "name": "android.permission.ACCESS_NETWORK_STATE" },
-        { "name": "android.permission.ACCESS_FINE_LOCATION" }
-      ]
-    }
-  }
-}
-```
+name: Android CI/CD - Build APK
 
-File Name: schemas.py
-```python
-# Placeholder file for schemas.
-# This file would typically define data models or API request/response schemas.
-```
+on:
+  push:
+    branches:
+      - main # Trigger on pushes to the main branch
+  pull_request:
+    branches:
+      - main # Trigger on pull requests to the main branch
 
-File Name: pricing.py
-```python
-# Placeholder file for pricing logic.
-# This file would typically contain functions or classes related to pricing calculations.
-```
+jobs:
+  build_android_apk:
+    runs-on: ubuntu-latest
 
-File Name: matching.py
-```python
-# Placeholder file for matching logic.
-# This file would typically implement algorithms for matching logistics requests with resources.
-```
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-File Name: app.py
-```python
-# Placeholder file for the main application entry point or core logic.
-# This file would typically house the main application bootstrap or server-side logic.
+      - name: Set up Java Development Kit (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use a recent LTS version of Node.js
+
+      - name: Install Node.js Dependencies
+        run: npm install
+
+      - name: Add Android Platform (Capacitor)
+        run: npx cap add android
+
+      - name: Sync Capacitor Assets to Android Project
+        run: npx cap sync
+
+      - name: Build Android Debug APK
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+        env:
+          # Optional: Add any environment variables required for your build, e.g., keystore passwords if signing
+          # KSTORE_PASS: ${{ secrets.KSTORE_PASS }}
+
+      - name: Upload Android Debug APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          # Optional: Set a retention period for the artifact (in days)
+          retention-days: 7
 ```
