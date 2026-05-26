@@ -1,0 +1,15 @@
+{
+  "appId": "in.aflowix.logistics",
+  "appName": "AIFlowix Logistics Terminal",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "android": {
+    "AndroidManifest.xml": {
+      "uses-permission": [
+        { "name": "android.permission.INTERNET" },
+        { "name": "android.permission.ACCESS_NETWORK_STATE" },
+        { "name": "android.permission.ACCESS_FINE_LOCATION" }
+      ]
+    }
+  }
+}
